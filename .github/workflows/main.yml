@@ -1,0 +1,57 @@
+name: Build and Release HsMod
+
+on:
+  push:
+    tags:
+      - 'v*' # 当你推送以 v 开头的标签时触发
+  workflow_dispatch: # 👈 允许你在网页上手动点击按钮触发编译
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x' # 如果项目用的是老版本，可改为 '4.8.x' 或 '5.0.x'
+        
+      # 👇 核心修复：自动寻找隐藏的 .sln 文件
+      - name: Find Solution File
+        id: find_sln
+        shell: pwsh
+        run: |
+          $slnPath = Get-ChildItem -Path "." -Filter "*.sln" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $slnPath) {
+            Write-Error "No .sln file found in the repository!"
+            exit 1
+          }
+          Write-Host "Found solution file at: $slnPath"
+          echo "SLN_PATH=$slnPath" >> $env:GITHUB_ENV
+      
+      # 👇 使用找到的真实路径进行还原和编译
+      - name: Restore NuGet packages
+        run: dotnet restore "${{ env.SLN_PATH }}"
+        
+      - name: Build the solution
+        run: dotnet build "${{ env.SLN_PATH }}" --configuration Release --no-restore
+        
+      # 👇 【终极清理】：编译完成后，直接暴力删除所有 obj 文件夹！
+      # 因为 obj 只是中间产物，删掉完全不影响最终的 dll
+      - name: Clean up obj folders
+        shell: pwsh
+        run: |
+          Write-Host "Removing all obj folders to keep artifacts clean..."
+          Get-ChildItem -Path "." -Directory -Filter "obj" -Recurse | Remove-Item -Recurse -Force
+
+      # 👇 【完美方案】：全局搜索 HsMod.dll，此时 obj 已经被删，绝对纯净！
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HsMod-Build
+          path: |
+            **/HsMod.dll
+          if-no-files-found: error
