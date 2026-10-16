@@ -1,4 +1,5 @@
-﻿using BepInEx.Logging;
+﻿using Assets;
+using BepInEx.Logging;
 using PegasusUtil;
 using System;
 using System.Collections;
@@ -10,6 +11,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
+using UnityEngine.Networking;
 using static HsMod.PluginConfig;
 
 namespace HsMod
@@ -317,7 +319,7 @@ namespace HsMod
             else if (cardSaleResult.Action != Network.CardSaleResult.SaleResult.CARD_WAS_SOLD)
             {
                 MyLogger(LogLevel.Warning, $"分解失败：{cardSaleResult.Action}");
-                UIStatus.Get().AddInfo("分解失败");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.disenchantFailed"));
             }
             else
             {
@@ -497,12 +499,103 @@ namespace HsMod
 
             }
             MyLogger(LogLevel.Warning, "尝试分解粉尘：" + totalSell);
-            UIStatus.Get().AddInfo("尝试分解粉尘：" + totalSell);
+            UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.disenchantDust") + totalSell);
         }
+        public static void TryAutoRefreshQuest()
+        {
+            try
+            {
+
+                int i = 0;
+                foreach (Hearthstone.DataModels.QuestDataModel item in Hearthstone.Progression.QuestManager.Get().CreateActiveQuestsDataModel(Assets.QuestPool.QuestPoolType.DAILY, QuestPool.RewardTrackType.GLOBAL, true).Quests)
+                {
+                    if (item == null || i > 4)
+                    {
+                        break;
+                    }
+                    if (item.Progress == 0 && item.RerollCount > 0)
+                    {
+                        MyLogger(BepInEx.Logging.LogLevel.Warning, $@"尝试重置任务：{item.Name}({item.Description})");
+                        Hearthstone.Progression.QuestManager.Get().RerollQuest(item.QuestId);
+                    }
+                    i++;
+                }
+
+                i = 0;
+                foreach (Hearthstone.DataModels.QuestDataModel item in Hearthstone.Progression.QuestManager.Get().CreateActiveQuestsDataModel(Assets.QuestPool.QuestPoolType.WEEKLY, QuestPool.RewardTrackType.GLOBAL, true).Quests)
+                {
+                    if (item == null || i > 4)
+                    {
+                        break;
+                    }
+                    if (item.Progress == 0 && item.RerollCount > 0)
+                    {
+                        MyLogger(BepInEx.Logging.LogLevel.Warning, $@"尝试重置任务：{item.Name}({item.Description})");
+                        Hearthstone.Progression.QuestManager.Get().RerollQuest(item.QuestId);
+                    }
+                    i++;
+                }
+            }
+            catch (Exception ex)
+            {
+                MyLogger(BepInEx.Logging.LogLevel.Error, $@"任务信息异常: {ex}");
+            }
+
+        }
+
+
 
         public static void TryGetSafeImg()
         {
             webPageBackImg.Value = "";
+        }
+
+        public enum BgsShopButton
+        {
+            Refresh,
+            Freeze,
+            Upgrade,
+            HeroPower
+        }
+
+        //酒馆快捷键：模拟点击商店按钮/英雄技能，走游戏原生点击路径
+        //（含校验、目标模式、网络请求），因此带目标的英雄技能会正常进入选目标状态
+        public static void ClickBgsShopButton(BgsShopButton button)
+        {
+            try
+            {
+                Card card = null;
+                if (button == BgsShopButton.HeroPower)
+                {
+                    card = GameState.Get()?.GetFriendlySidePlayer()?.GetHeroPowerCard();
+                }
+                else
+                {
+                    TB_BaconShop shop = GameState.Get()?.GetGameEntity() as TB_BaconShop;
+                    if (shop == null) return;
+                    switch (button)
+                    {
+                        case BgsShopButton.Refresh:
+                            card = shop.GetRefreshButtonCard();
+                            break;
+                        case BgsShopButton.Freeze:
+                            card = shop.GetFreezeButtonCard();
+                            break;
+                        case BgsShopButton.Upgrade:
+                            card = shop.GetTavernUpgradeButtonCard();
+                            break;
+                    }
+                }
+
+                Entity entity = card?.GetEntity();
+                if (entity == null) return;
+                typeof(InputManager).GetMethod("HandleClickOnCardInBattlefield", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.Invoke(InputManager.Get(), new object[] { entity, false });
+            }
+            catch (Exception ex)
+            {
+                MyLogger(LogLevel.Error, $"ClickBgsShopButton({button}): {ex.Message} \n{ex.InnerException}");
+            }
         }
 
 
@@ -625,12 +718,12 @@ namespace HsMod
             }
             if (SceneMgr.Get().GetMode() == SceneMgr.Mode.STARTUP || SceneMgr.Get().GetMode() == SceneMgr.Mode.LOGIN)
             {
-                UIStatus.Get().AddInfo("未初始化！");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.notInitialized"));
                 return;
             }
             if (SceneMgr.Get().GetMode() == SceneMgr.Mode.GAMEPLAY)
             {
-                UIStatus.Get().AddInfo("不能在游戏内购买！");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.cantBuyInGame"));
                 return;
             }
             try
@@ -678,7 +771,7 @@ namespace HsMod
                 if (StoreManager.GetStaticProductItemOwnershipStatus(productType, wingID, out string failReason) == ItemOwnershipStatus.OWNED)
                 {
                     Utils.MyLogger(LogLevel.Warning, $"{adventure}：冒险已拥有！");
-                    UIStatus.Get().AddInfo("所选冒险已拥有！");
+                    UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.adventureOwned"));
                 }
                 else
                 {
@@ -701,17 +794,17 @@ namespace HsMod
         {
             if (SceneMgr.Get().GetMode() == SceneMgr.Mode.STARTUP || SceneMgr.Get().GetMode() == SceneMgr.Mode.LOGIN)
             {
-                UIStatus.Get().AddInfo("未初始化！");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.notInitialized"));
                 return;
             }
             if (SceneMgr.Get().GetMode() == SceneMgr.Mode.GAMEPLAY)
             {
-                UIStatus.Get().AddInfo("不能在游戏内购买！");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.cantBuyInGame"));
                 return;
             }
             if (!StoreManager.Get().IsOpen())
             {
-                UIStatus.Get().AddInfo("商店初始化失败！");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.shopInitFailed"));
                 return;
             }
             try
@@ -731,7 +824,7 @@ namespace HsMod
                             {
                                 Utils.MyLogger(LogLevel.Info, $"Found {bundle?.Title}.");
                                 StoreManager.Get().StartStoreBuy(new BuyPmtProductEventArgs(bundle, CurrencyType.GOLD, 1));
-                                UIStatus.Get().AddInfo("请等待购买完成，如果UI卡住，请重进游戏。", 60);
+                                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.waitPurchase"), 60);
                                 return;
                             }
                         }
@@ -773,7 +866,7 @@ namespace HsMod
                         }
                     }
                 }
-                UIStatus.Get().AddInfo("未发现零元购商品！");
+                UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.noZeroShopItems"));
                 if (targetFrameRate.Value >= 144) // test code
                 {
                     foreach (PegasusUtil.ProductType t in Enum.GetValues(typeof(PegasusUtil.ProductType)))
@@ -799,7 +892,7 @@ namespace HsMod
                                     //
                                     Utils.MyLogger(LogLevel.Info, $"Found {bundle?.Title}.");
                                     StoreManager.Get().StartStoreBuy(new BuyPmtProductEventArgs(bundle, (CurrencyType)(targetFrameRate.Value - 180), 1));
-                                    UIStatus.Get().AddInfo("请等待购买完成，如果UI卡住，请重进游戏。", 60);
+                                    UIStatus.Get().AddInfo(LocalizationManager.GetLangValue("info.waitPurchase"), 60);
                                     return;
                                 }
                             }
@@ -1501,6 +1594,201 @@ namespace HsMod
 
                 MyLogger(LogLevel.Error, e);
             }
+
+            yield break;
+        }
+
+
+        public static Texture2D GetLocalCardTexture(Actor actor, MonoBehaviour coroutineRunner,
+            TAG_PREMIUM premium = TAG_PREMIUM.NORMAL)
+        {
+            if (actor == null || textureCache == null)
+                return null;
+
+            // 获取 cardId
+            string cardId = null;
+            Entity entity = actor.GetEntity();
+            if (entity != null)
+            {
+                cardId = entity.GetCardId();
+            }
+            else
+            {
+                EntityDef entityDef = actor.GetEntityDef();
+                if (entityDef != null)
+                {
+                    cardId = entityDef.GetCardId();
+                }
+            }
+
+            if (string.IsNullOrEmpty(cardId))
+                return null;
+            string Signature = LocalizationManager.GetCurrentLang() == "zhCN" ? "异画-" : "SIGNATURE-";
+            // 是否是异画（SIGNATURE）
+            bool isSignature = premium == TAG_PREMIUM.SIGNATURE;
+            if (isSignature)
+            {
+                if (textureCache.TryGetValue(Signature + cardId, out Texture2D cachedTextureSign))
+                {
+                    return cachedTextureSign;
+                }
+
+                if (textureCache.TryGetValue(cardId, out Texture2D cachedTexture))
+                {
+                    return cachedTexture;
+                }
+            }
+            else
+            {
+                if (textureCache.TryGetValue(cardId, out Texture2D cachedTexture))
+                {
+                    return cachedTexture;
+                }
+            }
+
+            if (isSignature)
+            {
+                // 查找时使用同样的 key
+                if (CacheReplaceCardMap.TryGetValue(Signature + cardId, out string fileName))
+                {
+                    // 3. 加载本地图片
+                    string path = Path.Combine(
+                        Application.dataPath.Substring(0, Application.dataPath.LastIndexOf("/")),
+                        "ModData", fileName + ".jpg");
+
+                    if (File.Exists(path))
+                    {
+                        coroutineRunner.StartCoroutine(LoadImageByLocal(path, Signature + cardId));
+                    }
+                }
+                else if (CacheReplaceCardMap.TryGetValue(cardId, out string fileName2))
+                {
+                    // 3. 加载本地图片
+                    string path = Path.Combine(
+                        Application.dataPath.Substring(0, Application.dataPath.LastIndexOf("/")),
+                        "ModData", fileName2 + ".jpg");
+
+                    if (File.Exists(path))
+                    {
+                        coroutineRunner.StartCoroutine(LoadImageByLocal(path, Signature + cardId));
+                    }
+                }
+            }
+            else
+            {
+                if (CacheReplaceCardMap.TryGetValue(cardId, out string fileName2))
+                {
+                    string path = Path.Combine(
+                        Application.dataPath.Substring(0, Application.dataPath.LastIndexOf("/")),
+                        "ModData", fileName2 + ".jpg");
+
+                    if (File.Exists(path))
+                    {
+                        coroutineRunner.StartCoroutine(LoadImageByLocal(path, cardId));
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static IEnumerator LoadImageByLocal(string path, string cardId)
+        {
+            UnityWebRequest wr = new UnityWebRequest("file://" + path);
+            DownloadHandlerTexture texDl =
+                (DownloadHandlerTexture)(object)(wr.downloadHandler =
+                    (DownloadHandler)new DownloadHandlerTexture(true));
+            yield return wr.SendWebRequest();
+            if ((int)wr.result == 1)
+            {
+                if (!textureCache.ContainsKey(cardId))
+                {
+                    textureCache.Add(cardId, texDl.texture);
+                }
+            }
+        }
+
+        // 初始化加载所有自定义卡牌图案，并放入缓存
+        public static IEnumerator OnLoadCardLocalTextures(MonoBehaviour coroutineRunner)
+        {
+            CacheReplaceCardMap = new Dictionary<string, string>();
+            textureCache = new Dictionary<string, Texture2D>();
+
+            // 如果没开启卡牌mod和卡背mod则退出
+            if (!ModTextures.Value)
+            {
+                yield break;
+            }
+
+            string path = Path.Combine("ModData");
+
+            try
+            {
+                if (!Directory.Exists(path))
+                {
+                    yield break;
+                }
+
+                string[] files = Directory.GetFiles(path, "*.jpg");
+                string isSignature = LocalizationManager.GetCurrentLang() == "zhCN" ? "异画-" : "SIGNATURE-";
+                for (int i = 0; i < files.Length; i++)
+                {
+                    // 判断文件名是否包含-，如果包含#则截取#后的字符串，否则全部放入，key 卡牌id value 文件名(不含.jpg)
+                    string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(files[i]);
+                    if (fileNameWithoutExtension.IndexOf('-') >= 0)
+                    {
+                        // 判断是否包含 异画 这2个文字
+                        if (fileNameWithoutExtension.IndexOf(isSignature) >= 0)
+                        {
+                            // key 为异画-卡牌id，value 跟之前一样还是路径
+                            CacheReplaceCardMap.TryAdd(
+                                isSignature +
+                                fileNameWithoutExtension.Substring(fileNameWithoutExtension.IndexOf(isSignature) + 3),
+                                fileNameWithoutExtension);
+                        }
+                        else
+                        {
+                            CacheReplaceCardMap.TryAdd(
+                                fileNameWithoutExtension.Substring(fileNameWithoutExtension.IndexOf('-') + 1),
+                                fileNameWithoutExtension);
+                        }
+                    }
+                    else
+                    {
+                        CacheReplaceCardMap.TryAdd(
+                            fileNameWithoutExtension,
+                            fileNameWithoutExtension);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!Directory.Exists(path))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(path);
+                    }
+                    catch (Exception e)
+                    {
+                        MyLogger(LogLevel.Error, $"OnLoadCardLocalTextures {e.Message}");
+                    }
+                }
+
+                MyLogger(LogLevel.Error, $"OnLoadCardLocalTextures {ex.Message}");
+            }
+
+            foreach (KeyValuePair<string, string> kvp in CacheReplaceCardMap)
+            {
+                string path2 = Path.Combine(
+                    Application.dataPath.Substring(0, Application.dataPath.LastIndexOf("/")),
+                    "ModData", kvp.Value + ".jpg");
+                if (File.Exists(path2))
+                {
+                    coroutineRunner.StartCoroutine(LoadImageByLocal(path2, kvp.Key));
+                }
+            }
+
 
             yield break;
         }
