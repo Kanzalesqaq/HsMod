@@ -12,10 +12,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '6.0.x' # 如果项目用的是老版本，可改为 '4.8.x' 或 '5.0.x'
         
@@ -46,10 +46,10 @@ jobs:
         run: |
           Write-Host "Removing all obj folders to keep artifacts clean..."
           Get-ChildItem -Path "." -Directory -Filter "obj" -Recurse | Remove-Item -Recurse -Force
-
+          
       # 👇 【完美方案】：全局搜索 HsMod.dll，此时 obj 已经被删，绝对纯净！
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: HsMod-Build
           path: |
